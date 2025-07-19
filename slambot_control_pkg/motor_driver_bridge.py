@@ -17,6 +17,7 @@ class MotorDriverBridge(Node):
 
         self.initial_left_encoder_ticks = None
         self.initial_right_encoder_ticks = None
+        self.encoder_ticks_delta = 0
 
         self.maximum_motor_pwm = 255
         self.left_motor_pwm = self.maximum_motor_pwm
@@ -26,9 +27,13 @@ class MotorDriverBridge(Node):
         self.encoder_ticks_subscriber_ = self.create_subscription(EncoderTicks, "encoder_ticks", self.callback_calculate_encoder_ticks_delta, 10)
         self.geometry_subscriber = self.create_subscription(Twist, "cmd_vel", self.callback_command_motors, 10)
 
+        self.calculate_correction_timer_ = self.create_timer(0.05, self.calculate_motor_pwm_correction)
+
     def callback_calculate_encoder_ticks_delta(self, msg: EncoderTicks):
         left_encoder_ticks = msg.left_encoder
         right_encoder_ticks = msg.right_encoder
+
+        self.get_logger().info(f"left encoder ticks: {left_encoder_ticks}, right encoder ticks: {right_encoder_ticks}")
 
         if self.initial_left_encoder_ticks is None:
             self.initial_left_encoder_ticks = left_encoder_ticks
@@ -40,30 +45,25 @@ class MotorDriverBridge(Node):
         left_encoder_ticks_delta = left_encoder_ticks - self.initial_left_encoder_ticks
         right_encoder_ticks_delta = right_encoder_ticks - self.initial_right_encoder_ticks
 
-        encoder_ticks_delta = left_encoder_ticks_delta - right_encoder_ticks_delta
+        self.encoder_ticks_delta = left_encoder_ticks_delta - right_encoder_ticks_delta
 
-        self.calculate_motor_pwm_correction(encoder_ticks_delta)
+    def calculate_motor_pwm_correction(self):
+        p = 3.1
+        pwm_correction = abs(int(p * self.encoder_ticks_delta))
 
-    def calculate_motor_pwm_correction(self, encoder_ticks_delta):
-        # If the robot is veering, try to increase the motor speed on the side it's veering to
-        # If the motor speed is already maxed out, reduce the motor speed on the opposing side
-        if encoder_ticks_delta > 0: # Veering right 
-            if self.right_motor_pwm < self.maximum_motor_pwm - 1:
-                self.right_motor_pwm += 1
-            else:
-                if self.left_motor_pwm > 1:
-                    self.left_motor_pwm -= 1
-        elif encoder_ticks_delta < 0: # Veering left
-            if self.left_motor_pwm < self.maximum_motor_pwm - 1:
-                self.left_motor_pwm += 1
-            else:
-                if self.right_motor_pwm > 1:
-                    self.right_motor_pwm -= 1
+        if self.encoder_ticks_delta > 0: # Veering right 
+            self.left_motor_pwm = max(0, min(255, self.maximum_motor_pwm - pwm_correction))
+            self.right_motor_pwm = self.maximum_motor_pwm
+
+        elif self.encoder_ticks_delta < 0: # Veering left
+            self.left_motor_pwm = self.maximum_motor_pwm
+            self.right_motor_pwm = max(0, min(255, self.maximum_motor_pwm - pwm_correction))
+
         else:
             self.left_motor_pwm = self.maximum_motor_pwm
             self.right_motor_pwm = self.maximum_motor_pwm
 
-        self.get_logger().info(f"Left motor PWM: {self.left_motor_pwm}, right motor PWM: {self.right_motor_pwm}")
+        # self.get_logger().info(f"encoder ticks delta: {self.encoder_ticks_delta}, p: {p}, pwm correction: {pwm_correction}, left motor PWM: {self.left_motor_pwm}, right motor PWM: {self.right_motor_pwm}")
     
     def callback_command_motors(self, msg: Twist):
         self.maximum_motor_pwm = int(msg.linear.x * 255)
@@ -74,10 +74,6 @@ class MotorDriverBridge(Node):
         else:
             left_motor = 0
             right_motor = 0
-
-        # V255:1,255:1
-
-        #self.get_logger().info(f"linear.x: {linear_x}, angular.z: {angular_z}")
 
         command = f"V{left_motor}:1,{right_motor}:1\n"
         self.ser.write(command.encode('utf-8'))

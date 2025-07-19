@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'motor_driver_bridge = slambot_control_pkg.motor_driver_bridge:main'
+            'motor_driver_bridge = slambot_control_pkg.motor_driver_bridge:main',
+            'velocity_driver = slambot_control_pkg.velocity_driver:main'
         ],
     },
 )
