@@ -28,6 +28,7 @@ class MotorDriverBridge(Node):
         self.geometry_subscriber = self.create_subscription(Twist, "cmd_vel", self.callback_command_motors, 10)
 
         self.calculate_correction_timer_ = self.create_timer(0.05, self.calculate_motor_pwm_correction)
+        self.drive_motors_timer = self.create_timer(1.0, self.drive_motors)
 
     def callback_calculate_encoder_ticks_delta(self, msg: EncoderTicks):
         left_encoder_ticks = msg.left_encoder
@@ -68,7 +69,8 @@ class MotorDriverBridge(Node):
     def callback_command_motors(self, msg: Twist):
         self.maximum_motor_pwm = int(msg.linear.x * 255)
 
-        if msg.linear.x > 0:
+    def drive_motors(self):
+        if self.maximum_motor_pwm > 0:
             left_motor = self.left_motor_pwm
             right_motor = self.right_motor_pwm
         else:
